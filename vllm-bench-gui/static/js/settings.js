@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const form = $('settings-form');
 
-  const TEXT_FIELDS = ['model_dir', 'dataset_dir', 'results_dir',
+  const TEXT_FIELDS = ['model_dir', 'results_dir',
     'slurm_partition', 'slurm_time_limit', 'slurm_account', 'slurm_extra_flags'];
   const NUM_FIELDS = ['port_range_start', 'health_check_timeout', 'slurm_gpus_per_job'];
 

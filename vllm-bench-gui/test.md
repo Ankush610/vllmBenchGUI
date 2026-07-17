@@ -216,22 +216,59 @@ Everything below needs the scenarios called out (and a SLURM cluster for §7).
 
 - [ ] `random`, `sharegpt`, `sonnet` built-ins run (sharegpt auto-downloads
       its file — needs internet on first use).
-- [ ] Conditional fields: random shows input+output len; sharegpt hides
-      input len (output override only); sonnet shows input/output/prefix.
+- [ ] `speed-bench` runs: argv contains `--dataset-name speed-bench
+      --speed-bench-config <cfg> --output-len <n>`; category/max-input-len
+      appear only when set (inspect sbatch script or process cmdline).
+- [ ] `hf` runs with a repo ID (e.g. `THUDM/LongBench` + subset/split);
+      argv uses `--dataset-path <org/name> --hf-subset --hf-split`.
+- [ ] Schema-driven sub-fields: each of the 5 datasets renders its own
+      "Dataset options" grid with defaults from `/api/datasets`; switching
+      dataset resets edited sub-fields to that dataset's defaults.
+- [ ] Network badge under the dropdown updates per selection (offline /
+      cached after first run / needs subset+split for offline).
+- [ ] `hf` dataset-path must look like `org/name`: a filesystem path is
+      rejected in the UI and by the API.
+- [ ] Offline mode ON (Datasets tab): hf subset/split become required in
+      the form, and a hand-crafted POST /api/runs without them returns 422;
+      sharegpt/speed-bench show the amber dataset-path nudge (submit still
+      allowed).
 - [ ] Drop a `.json`/`.jsonl` in the dataset dir → appears in dropdown as
-      `file:<name>`; run uses `--dataset-path`.
+      `file:<name>`; run uses `--dataset-name sharegpt --dataset-path`;
+      optional output-len override works.
 - [ ] Path traversal: `file:../../etc/passwd` via curl is rejected.
+- [ ] Backward compat: a run queued before the schema change re-hydrates
+      into a tab without errors; an old localStorage draft migrates (lengths
+      move into the dataset grid); old completed runs keep their In/Out len
+      in the dashboard table.
+
+## 9b. Datasets view
+
+- [ ] Datasets tab shows one card per built-in dataset with network badge,
+      note and per-flag summary; local files listed in the table below.
+- [ ] Offline toggle persists across refresh (`GET /api/settings` returns
+      `offline_mode`) and immediately re-validates open Benchmark tabs
+      (no page reload needed).
+- [ ] Dataset dir path is displayed read-only (setting no longer editable
+      in Settings).
 
 ## 10. Multi-GPU (if hardware available)
 
 - [ ] TP=2 run works; preflight accepts TP ≤ GPU count and rejects TP >.
 
-## Suggested automated tests (not yet written)
+## Automated tests
 
-Unit (pytest, no GPU needed):
-- `schemas.py`: valid/invalid configs, shell-metachar rejection, reuse_key.
-- `runners/base.py`: exact argv for each dataset type; sbatch script content
-  (golden-file test).
+Written (run with `python -m pytest` from `vllm-bench-gui/`, no GPU needed):
+- `tests/test_bench_args.py`: exact argv per dataset (all five + `file:*`),
+  bool/empty-optional flag omission, legacy-blob replay, tail flags.
+- `tests/test_dataset_schema.py`: `validate_params` (types, ranges, selects,
+  hf repo-id, shell metachars, offline requiredness), `legacy_to_params`,
+  `summary_lengths`.
+- `tests/test_schemas.py`: `BenchConfig` legacy migration, unknown-key
+  dropping, invalid dataset/param rejection.
+
+Still suggested (not yet written):
+- `schemas.py`: shell-metachar rejection on server args, reuse_key.
+- `runners/base.py`: sbatch script content (golden-file test).
 - `services/results.py`: parse fixture JSONs (both key-name variants);
   missing/corrupt file → ResultParseError.
 - `services/model_scan.py`: fake hub-cache tree → repo ids; empty snapshot

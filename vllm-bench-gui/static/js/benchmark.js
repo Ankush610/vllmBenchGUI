@@ -20,14 +20,12 @@
     extra_server_args: '',
     backend: 'vllm',
     dataset: 'random',
-    input_len: 1024,
-    output_len: 128,
     num_prompts: 1000,
     max_concurrency: 200,
     request_rate: 'inf',
     ignore_eos: true,
     seed: 0,
-    sonnet_prefix_len: 200,
+    dataset_params: {},   // per-dataset params, filled from the schema
   };
 
   const SERVER_FIELDS = [
@@ -55,11 +53,7 @@
       options: ['vllm', 'openai-chat'],
       tip: 'vllm = /v1/completions (raw throughput); openai-chat = /v1/chat/completions (realistic chat serving).' },
     { key: 'dataset', label: 'Dataset', type: 'dataset',
-      tip: 'random = synthetic exact-length prompts; sharegpt = real conversations; sonnet = built-in, prefix-cache friendly; files come from the dataset dir.' },
-    { key: 'input_len', label: 'Input length', type: 'number', placeholder: '1024',
-      tip: 'Prompt length in tokens per request (random dataset).' },
-    { key: 'output_len', label: 'Output length', type: 'number', placeholder: '128',
-      tip: 'Tokens generated per request.' },
+      tip: 'Pick a dataset; its own options appear below. The badge shows what it needs from the network — see the Datasets tab for details.' },
     { key: 'num_prompts', label: 'Num prompts', type: 'number', placeholder: '1000',
       tip: 'Total requests in this run; more = tighter percentiles, longer runtime.' },
     { key: 'max_concurrency', label: 'Max concurrency', type: 'number', placeholder: '200',
@@ -68,17 +62,108 @@
       tip: "Requests/sec arrival rate; 'inf' = closed loop bounded only by concurrency." },
     { key: 'seed', label: 'Seed', type: 'number', placeholder: '0',
       tip: 'Same seed + params = same prompts, reproducible runs.' },
-    { key: 'sonnet_prefix_len', label: 'Sonnet prefix length', type: 'number',
-      placeholder: '200', tip: 'Shared prefix length in tokens (sonnet dataset only).' },
     { key: 'ignore_eos', label: 'Ignore EOS', type: 'toggle',
       tip: 'Force full output length even if the model wants to stop early; keeps token counts exact.' },
   ];
+
+  // ----------------------------------------------------- dataset schema
+  // Full specs (fields, network badge, notes) come from GET /api/datasets;
+  // this seed only keeps the dropdown alive before hydrate() lands.
+  let datasetsCache = [{ id: 'random' }, { id: 'sharegpt' }, { id: 'sonnet' }];
+  const FILE_SPEC_ID = '__file__';
+
+  const BADGES = {
+    offline: { cls: 'badge-offline', text: 'offline' },
+    cached: { cls: 'badge-cached', text: 'cached after first run' },
+    hf: { cls: 'badge-hf', text: 'needs subset+split for offline' },
+  };
+
+  function dsSpec(id) {
+    return datasetsCache.find((d) => d.id === id)
+      || (String(id).startsWith('file:')
+        ? datasetsCache.find((d) => d.kind === 'file') : null)
+      || null;
+  }
+
+  function dsFields(id) {
+    const spec = dsSpec(id);
+    return (spec && spec.fields) || [];
+  }
+
+  function defaultDatasetParams(id) {
+    const dp = {};
+    dsFields(id).forEach((f) => { dp[f.key] = f.default; });
+    return dp;
+  }
+
+  function isOffline() {
+    return !!(window.__settings && String(window.__settings.offline_mode) === '1');
+  }
+
+  // Rehydrate a pre-schema config (flat input_len/output_len/prefix) into
+  // dataset_params — the JS twin of dataset_schema.legacy_to_params.
+  function legacyToParams(bench) {
+    const ds = bench.dataset || 'random';
+    const dp = defaultDatasetParams(ds);
+    const inLen = bench.input_len, outLen = bench.output_len;
+    if (ds === 'random') {
+      if (inLen != null && inLen !== '') dp.random_input_len = inLen;
+      if (outLen != null && outLen !== '') dp.random_output_len = outLen;
+    } else if (ds === 'sonnet') {
+      if (inLen != null && inLen !== '') dp.sonnet_input_len = inLen;
+      if (outLen != null && outLen !== '') dp.sonnet_output_len = outLen;
+      if (bench.sonnet_prefix_len != null && bench.sonnet_prefix_len !== '') {
+        dp.sonnet_prefix_len = bench.sonnet_prefix_len;
+      }
+    } else if (ds === 'sharegpt' || ds.startsWith('file:')) {
+      if (outLen != null && outLen !== '') dp.sharegpt_output_len = outLen;
+    }
+    return dp;
+  }
 
   // ------------------------------------------------------------ validation
   const intIn = (v, lo, hi) => {
     const n = Number(v);
     return Number.isInteger(n) && n >= lo && n <= hi;
   };
+
+  // Mirrors dataset_schema.validate_params (backend parity).
+  function validateDatasetParams(dsId, dp) {
+    const errors = {};
+    dp = dp || {};
+    dsFields(dsId).forEach((f) => {
+      const v = dp[f.key];
+      const unset = v == null || v === '';
+      if (unset) {
+        if (f.required === true) errors[f.key] = 'required';
+        else if (f.required === 'offline' && isOffline()) {
+          errors[f.key] = 'required in offline mode';
+        }
+        return;
+      }
+      if (f.type === 'int' || f.type === 'float') {
+        const n = Number(v);
+        if (!Number.isFinite(n) || (f.type === 'int' && !Number.isInteger(n))) {
+          errors[f.key] = f.type === 'int' ? 'must be a whole number' : 'must be a number';
+          return;
+        }
+        if ((f.min != null && n < f.min) || (f.max != null && n > f.max)) {
+          errors[f.key] = `must be between ${f.min} and ${f.max}`;
+        }
+      } else if (f.type === 'select') {
+        if (!f.options.map(String).includes(String(v))) errors[f.key] = 'invalid choice';
+      } else if (f.type === 'hf_repo') {
+        if (!/^[\w.\-]+\/[\w.\-]+$/.test(String(v).trim())) {
+          errors[f.key] = 'must look like org/name (HF repo id)';
+        }
+      } else if (f.type === 'str' || f.type === 'path') {
+        if (/[;&|`\n]|\$\(/.test(String(v))) {
+          errors[f.key] = 'shell metacharacters ; & | ` $( not allowed';
+        }
+      }
+    });
+    return errors;
+  }
 
   function validateParams(p) {
     const errors = {};
@@ -101,8 +186,6 @@
     if (/[;&|`\n]|\$\(/.test(p.extra_server_args)) {
       errors.extra_server_args = 'shell metacharacters ; & | ` $( not allowed';
     }
-    if (!intIn(p.input_len, 1, 131072)) errors.input_len = 'must be 1–131072';
-    if (!intIn(p.output_len, 1, 32768)) errors.output_len = 'must be 1–32768';
     if (!intIn(p.num_prompts, 1, 1_000_000)) errors.num_prompts = 'must be 1–1000000';
     if (!intIn(p.max_concurrency, 1, 1_000_000)) errors.max_concurrency = 'must be ≥ 1';
     const rr = String(p.request_rate).trim();
@@ -110,9 +193,7 @@
       errors.request_rate = "positive number or 'inf'";
     }
     if (!intIn(p.seed, 0, 4_000_000_000)) errors.seed = 'must be an integer ≥ 0';
-    if (p.dataset === 'sonnet' && !intIn(p.sonnet_prefix_len, 0, 131072)) {
-      errors.sonnet_prefix_len = 'must be an integer ≥ 0';
-    }
+    Object.assign(errors, validateDatasetParams(p.dataset, p.dataset_params));
     return errors;
   }
 
@@ -121,7 +202,6 @@
   let activeTid = null;
   let runsById = {};        // from GET /api/runs
   let modelsCache = [];
-  let datasetsCache = [{ id: 'random' }, { id: 'sharegpt' }, { id: 'sonnet' }];
   // `raw` keeps the bytes as received; the panel renders a \r-collapsed view.
   // `phase` is the user's pick: 'auto' follows the running phase, anything else
   // pins the panel to that one log file.
@@ -188,7 +268,7 @@
   function addTab() {
     const src = activeTab();
     const params = src ? JSON.parse(JSON.stringify(src.params))
-      : { ...DEFAULT_PARAMS };
+      : freshParams();
     const tab = {
       tid: uid(),
       name: dedupedName(params.model ? shortName(params.model) : 'New', null),
@@ -217,8 +297,13 @@
     saveDrafts();
   }
 
+  // DEFAULT_PARAMS.dataset_params is a shared object — every tab needs its own.
+  function freshParams() {
+    return { ...DEFAULT_PARAMS, dataset_params: defaultDatasetParams('random') };
+  }
+
   function freshTab() {
-    return { tid: uid(), name: 'New', label: '', params: { ...DEFAULT_PARAMS }, runId: null };
+    return { tid: uid(), name: 'New', label: '', params: freshParams(), runId: null };
   }
 
   function selectTab(tid) {
@@ -236,7 +321,7 @@
     if (!tab) return;
     buildGrid($('server-params'), SERVER_FIELDS, tab);
     buildGrid($('bench-params'), BENCH_FIELDS, tab);
-    applyDatasetConditionals(tab);
+    buildDatasetGrid(tab);
     $('run-label').value = tab.label || '';
     $('run-label').disabled = !!tab.runId;
     showErrors(tab);
@@ -279,6 +364,7 @@
         });
         if (![...input.options].some((o) => o.value === tab.params.dataset)) {
           tab.params.dataset = 'random';
+          tab.params.dataset_params = defaultDatasetParams('random');
         }
         input.value = tab.params.dataset;
       } else if (f.type === 'toggle') {
@@ -306,6 +392,14 @@
       if (f.type !== 'toggle' && f.type !== 'model') cell.appendChild(input);
       input.disabled = locked;
 
+      if (f.type === 'dataset') {
+        const badge = document.createElement('span');
+        badge.id = 'dataset-badge';
+        badge.style.marginTop = '2px';
+        cell.appendChild(badge);
+        setDatasetBadge(badge, tab.params.dataset);
+      }
+
       const err = document.createElement('div');
       err.className = 'param-error';
       cell.appendChild(err);
@@ -313,7 +407,12 @@
       const commit = () => {
         tab.params[f.key] = f.type === 'toggle' ? input.checked : input.value.trim();
         if (f.key === 'model') onModelChanged(tab);
-        if (f.key === 'dataset') applyDatasetConditionals(tab);
+        if (f.key === 'dataset') {
+          // Switching datasets resets its options to that dataset's defaults.
+          tab.params.dataset_params = defaultDatasetParams(tab.params.dataset);
+          updateDatasetBadge(tab);
+          buildDatasetGrid(tab);
+        }
         validateTab(tab);
         showErrors(tab);
         saveDrafts();
@@ -388,37 +487,109 @@
     }
   }
 
-  // Conditional fields (plan §6.2): same grid slots, labels swap by dataset.
-  function applyDatasetConditionals(tab) {
-    const ds = tab.params.dataset;
-    const grid = $('bench-params');
-    const cellOf = (key) => grid.querySelector(`[data-field="${key}"]`);
-    const setLabel = (key, text) => {
-      const cell = cellOf(key);
-      if (!cell) return;
-      const label = cell.querySelector('label');
-      const info = label.querySelector('.info');
-      label.textContent = text + ' ';
-      label.appendChild(info);
-    };
-    const show = (key, visible) => {
-      const cell = cellOf(key);
-      if (cell) cell.style.display = visible ? '' : 'none';
-    };
+  function setDatasetBadge(el, dsId) {
+    const spec = dsSpec(dsId);
+    const badge = spec && BADGES[spec.network];
+    el.className = badge ? `badge ${badge.cls}` : '';
+    el.textContent = badge ? badge.text : '';
+  }
 
-    show('sonnet_prefix_len', ds === 'sonnet');
-    if (ds === 'random') {
-      show('input_len', true);
-      setLabel('input_len', 'Input length');
-      setLabel('output_len', 'Output length');
-    } else if (ds === 'sonnet') {
-      show('input_len', true);
-      setLabel('input_len', 'Sonnet input length');
-      setLabel('output_len', 'Sonnet output length');
-    } else { // sharegpt or file:*
-      show('input_len', false);
-      setLabel('output_len', 'Output length (override)');
-    }
+  function updateDatasetBadge(tab) {
+    const el = $('dataset-badge');
+    if (el) setDatasetBadge(el, tab.params.dataset);
+  }
+
+  // Per-dataset sub-fields, rendered straight from the schema served by
+  // GET /api/datasets. Rebuilt whenever the dataset (or settings) changes.
+  function buildDatasetGrid(tab) {
+    const grid = $('dataset-params');
+    grid.innerHTML = '';
+    const locked = !!tab.runId;
+    const fields = dsFields(tab.params.dataset);
+    $('dataset-params-title').style.display = fields.length ? '' : 'none';
+    if (!tab.params.dataset_params) tab.params.dataset_params = {};
+    const dp = tab.params.dataset_params;
+
+    fields.forEach((f) => {
+      const cell = document.createElement('div');
+      cell.className = 'param-cell' + (f.type === 'path' || f.type === 'hf_repo'
+        ? ' param-cell-wide' : '');
+      cell.dataset.field = f.key;
+
+      const label = document.createElement('label');
+      label.textContent = f.label + ' ';
+      if (f.tip) {
+        const info = document.createElement('span');
+        info.className = 'info';
+        info.textContent = 'i';
+        info.dataset.tip = f.tip;
+        label.appendChild(info);
+      }
+      cell.appendChild(label);
+
+      let input;
+      if (f.type === 'select') {
+        input = document.createElement('select');
+        f.options.forEach((o) => {
+          const opt = document.createElement('option');
+          opt.value = String(o);
+          opt.textContent = o === '' ? '(default)' : String(o);
+          input.appendChild(opt);
+        });
+        input.value = dp[f.key] == null ? '' : String(dp[f.key]);
+        cell.appendChild(input);
+      } else if (f.type === 'bool') {
+        const row = document.createElement('div');
+        row.className = 'toggle-row';
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!dp[f.key];
+        row.appendChild(input);
+        const txt = document.createElement('span');
+        txt.textContent = dp[f.key] ? 'on' : 'off';
+        row.appendChild(txt);
+        input.addEventListener('change', () => { txt.textContent = input.checked ? 'on' : 'off'; });
+        cell.appendChild(row);
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        if (f.type === 'int' || f.type === 'float') input.inputMode = 'decimal';
+        input.placeholder = f.placeholder
+          || (f.default !== '' && f.default !== false ? String(f.default) : '');
+        input.value = dp[f.key] == null ? '' : String(dp[f.key]);
+        cell.appendChild(input);
+      }
+      input.disabled = locked;
+
+      const err = document.createElement('div');
+      err.className = 'param-error';
+      cell.appendChild(err);
+
+      // Non-blocking offline hint (sharegpt/speed-bench dataset path).
+      const warn = document.createElement('div');
+      warn.className = 'param-warn';
+      cell.appendChild(warn);
+
+      const refreshWarn = () => {
+        warn.textContent = (f.offline_nudge && isOffline()
+          && (dp[f.key] == null || dp[f.key] === ''))
+          ? 'Offline mode: set a local dataset path unless the download cache is already warm.'
+          : '';
+      };
+      refreshWarn();
+
+      const commit = () => {
+        dp[f.key] = f.type === 'bool' ? input.checked : input.value.trim();
+        refreshWarn();
+        validateTab(tab);
+        showErrors(tab);
+        saveDrafts();
+        updateSubmitState();
+      };
+      input.addEventListener('change', commit);
+      input.addEventListener('blur', commit);
+      grid.appendChild(cell);
+    });
   }
 
   function validateTab(tab) {
@@ -448,6 +619,20 @@
   }
 
   // ------------------------------------------------------- submit/cancel
+  // Coerce dataset params by their spec type; empty optionals are dropped.
+  function cleanDatasetParams(params) {
+    const out = {};
+    const dp = params.dataset_params || {};
+    dsFields(params.dataset).forEach((f) => {
+      const v = dp[f.key];
+      if (f.type === 'bool') { out[f.key] = !!v; return; }
+      if (v == null || String(v).trim() === '') return;
+      out[f.key] = (f.type === 'int' || f.type === 'float')
+        ? Number(v) : String(v).trim();
+    });
+    return out;
+  }
+
   async function submit() {
     const drafts = draftTabs();
     for (const t of drafts) {
@@ -471,14 +656,12 @@
       bench: {
         backend: t.params.backend,
         dataset: t.params.dataset,
-        input_len: Number(t.params.input_len),
-        output_len: Number(t.params.output_len),
         num_prompts: Number(t.params.num_prompts),
         max_concurrency: Number(t.params.max_concurrency),
         request_rate: String(t.params.request_rate).trim(),
         ignore_eos: !!t.params.ignore_eos,
         seed: Number(t.params.seed),
-        sonnet_prefix_len: Number(t.params.sonnet_prefix_len) || 200,
+        dataset_params: cleanDatasetParams(t.params),
       },
     }));
     try {
@@ -664,7 +847,19 @@
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(DRAFTS_KEY)); } catch (_) { /* corrupt */ }
     tabs = (stored && Array.isArray(stored.drafts) ? stored.drafts : [])
-      .map((d) => ({ ...d, params: { ...DEFAULT_PARAMS, ...d.params }, runId: null }));
+      .map((d) => {
+        const params = { ...DEFAULT_PARAMS, ...d.params };
+        // Migrate pre-schema drafts; top up new-style ones with defaults so
+        // fields added to the schema later pick up their default.
+        params.dataset_params = (d.params && d.params.dataset_params
+          && Object.keys(d.params.dataset_params).length)
+          ? { ...defaultDatasetParams(params.dataset), ...d.params.dataset_params }
+          : legacyToParams(params);
+        delete params.input_len;
+        delete params.output_len;
+        delete params.sonnet_prefix_len;
+        return { ...d, params, runId: null };
+      });
 
     let runs = [];
     try { runs = await API.getRuns(); } catch (_) { /* offline */ }
@@ -692,6 +887,7 @@
   }
 
   function flattenConfig(cfg) {
+    const dp = cfg.bench.dataset_params;
     return {
       ...DEFAULT_PARAMS,
       model: cfg.server.model,
@@ -702,14 +898,15 @@
       extra_server_args: cfg.server.extra_server_args || '',
       backend: cfg.bench.backend,
       dataset: cfg.bench.dataset,
-      input_len: cfg.bench.input_len,
-      output_len: cfg.bench.output_len,
       num_prompts: cfg.bench.num_prompts,
       max_concurrency: cfg.bench.max_concurrency,
       request_rate: cfg.bench.request_rate,
       ignore_eos: cfg.bench.ignore_eos,
       seed: cfg.bench.seed,
-      sonnet_prefix_len: cfg.bench.sonnet_prefix_len ?? 200,
+      // Pre-schema runs carry flat length fields instead of dataset_params.
+      dataset_params: (dp && Object.keys(dp).length)
+        ? { ...defaultDatasetParams(cfg.bench.dataset), ...dp }
+        : legacyToParams(cfg.bench),
     };
   }
 
@@ -753,6 +950,14 @@
       tok.textContent = s.hf_token_set ? 'Loaded ✓' : 'Not set';
       tok.className = s.hf_token_set ? 'token-ok' : 'token-missing';
     } catch (_) { /* keep last known */ }
+    // Offline mode changes requiredness (hf subset/split) and the nudges —
+    // re-validate and re-render the active tab immediately.
+    const tab = activeTab();
+    if (tab) {
+      validateTab(tab);
+      renderParams();
+      updateSubmitState();
+    }
   }
 
   hydrate();

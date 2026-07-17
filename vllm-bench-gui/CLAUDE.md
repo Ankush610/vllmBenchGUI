@@ -63,17 +63,26 @@ re-hydrates from the API on refresh; draft tabs mirror to localStorage.
 
 - **Run locally (Linux):** `pip install -r requirements.txt && ./run.sh`
 - **Syntax check:** `python -m compileall app`
+- **Run tests:** `python -m pytest` (from `vllm-bench-gui/`; pure functions,
+  works on Windows too)
 - **Fake dashboard data (dev):** `python scripts/seed_demo.py` (10 demo
   runs, `--remove` to clean up; ids prefixed `demo-`)
-- **Add a benchmark param:** `schemas.py` → `base.py:bench_args` →
-  `benchmark.js` (`DEFAULT_PARAMS`, `BENCH_FIELDS`, `validateParams`,
-  `submit` payload, `flattenConfig`) → `results.py`/`db.py` if it should
-  appear in the dashboard.
+- **Add a dataset or dataset flag:** one field-spec entry in
+  `app/services/dataset_schema.py` (`DATASETS`). The dropdown, sub-fields,
+  validation (both sides), badges and argv all derive from it — plus a
+  golden-argv case in `tests/test_bench_args.py`.
+- **Add a shared benchmark param** (applies to every dataset):
+  `schemas.py:BenchConfig` → `base.py:bench_args` → `benchmark.js`
+  (`DEFAULT_PARAMS`, `BENCH_FIELDS`, `validateParams`, `submit` payload,
+  `flattenConfig`) → `results.py`/`db.py` if it should appear in the
+  dashboard.
 - **Add a setting:** `config.py:SETTINGS_DEFAULTS` → `schemas.py:SettingsIn`
   → `index.html` settings form → `settings.js` field lists.
 
 ## Testing
 
-There is no automated test suite yet; `test.md` is the manual test plan and
-the checklist of what unit/integration tests should exist. When you add
-behavior, add the corresponding checklist entry to `test.md`.
+`tests/` holds the pytest suite (dataset schema validation, golden argv per
+dataset, legacy-config migration) — run `python -m pytest`. `test.md` is the
+manual test plan for everything that needs a browser, GPU or cluster. When
+you add behavior, add a pytest case where the logic is pure and the
+corresponding checklist entry to `test.md`.

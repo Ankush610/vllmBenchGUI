@@ -1,28 +1,23 @@
-"""Dataset list: built-ins plus files scanned from the dataset directory."""
+"""Dataset list: schema built-ins plus files scanned from the dataset dir."""
 from __future__ import annotations
 
 from pathlib import Path
 
-BUILTINS = [
-    {"id": "random", "kind": "builtin",
-     "note": "synthetic exact-length prompts"},
-    {"id": "sharegpt", "kind": "builtin",
-     "note": "real conversations (auto-download)"},
-    {"id": "sonnet", "kind": "builtin",
-     "note": "built-in, prefix-cache friendly"},
-]
+from app.services import dataset_schema
 
 SCAN_SUFFIXES = {".json", ".jsonl"}
 
 
 def scan_datasets(dataset_dir: str) -> list[dict]:
-    items = list(BUILTINS)
+    items = [dict(spec) for spec in dataset_schema.DATASETS.values()]
     root = Path(dataset_dir).expanduser()
     if root.is_dir():
         for f in sorted(root.iterdir()):
             if f.is_file() and f.suffix.lower() in SCAN_SUFFIXES:
                 items.append({"id": f"file:{f.name}", "kind": "file",
-                              "path": str(f), "note": "local file"})
+                              "network": "offline", "path": str(f),
+                              "note": "local file",
+                              "fields": dataset_schema.FILE_FIELDS})
     return items
 
 

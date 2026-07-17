@@ -10,6 +10,7 @@ import shlex
 from pathlib import Path
 
 from app import config
+from app.services import dataset_schema
 
 
 def serve_args(server: dict, port: int) -> list[str]:
@@ -45,26 +46,17 @@ def bench_args(run: dict, settings: dict, port: int) -> list[str]:
         args.append("--ignore-eos")
 
     dataset = bench["dataset"]
-    if dataset == "random":
-        args += ["--dataset-name", "random",
-                 "--random-input-len", str(bench["input_len"]),
-                 "--random-output-len", str(bench["output_len"])]
-    elif dataset == "sharegpt":
-        args += ["--dataset-name", "sharegpt",
-                 "--sharegpt-output-len", str(bench["output_len"])]
-    elif dataset == "sonnet":
-        args += ["--dataset-name", "sonnet",
-                 "--sonnet-input-len", str(bench["input_len"]),
-                 "--sonnet-output-len", str(bench["output_len"]),
-                 "--sonnet-prefix-len", str(bench.get("sonnet_prefix_len", 200))]
-    elif dataset.startswith("file:"):
+    # Old queued runs replay from the DB blob without re-validation.
+    dp = bench.get("dataset_params") or dataset_schema.legacy_to_params(bench)
+    if dataset.startswith("file:"):
         from app.services.dataset_scan import resolve_dataset_file
         path = resolve_dataset_file(settings["dataset_dir"], dataset)
         if path is None:
             raise ValueError(f"dataset file not found: {dataset}")
-        args += ["--dataset-name", "sharegpt",
-                 "--dataset-path", str(path),
-                 "--sharegpt-output-len", str(bench["output_len"])]
+        args += ["--dataset-name", "sharegpt", "--dataset-path", str(path)]
+    else:
+        args += ["--dataset-name", dataset]
+    args += dataset_flag_args(dataset, dp)
 
     # Always sent silently (plan §6.2).
     args += [
@@ -75,6 +67,21 @@ def bench_args(run: dict, settings: dict, port: int) -> list[str]:
         "--base-url", f"http://127.0.0.1:{port}",
     ]
     return args
+
+
+def dataset_flag_args(dataset: str, dp: dict) -> list[str]:
+    """Pure: dataset field specs + non-empty params -> argv fragment."""
+    out: list[str] = []
+    for f in dataset_schema.field_specs(dataset):
+        v = dp.get(f["key"])
+        if v is None or v == "":
+            continue
+        if f["type"] == "bool":
+            if v:
+                out.append(f["flag"])
+        else:
+            out += [f["flag"], str(v)]
+    return out
 
 
 def shell_join(args: list[str]) -> str:

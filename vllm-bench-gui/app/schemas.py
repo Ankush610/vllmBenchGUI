@@ -6,13 +6,13 @@ held to the same constraints as the UI.
 from __future__ import annotations
 
 import re
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-# Tokens that would let extra args escape into new shell commands.
-UNSAFE_SHELL = re.compile(r"[;&|`\n]|\$\(")
-HF_REPO_RE = re.compile(r"^[\w.\-]+/[\w.\-]+$")
+from app.services import dataset_schema
+# Shared with dataset_schema so frontend/backend/param validation agree.
+from app.services.dataset_schema import HF_REPO_RE, UNSAFE_SHELL  # noqa: F401
 
 
 class ServerConfig(BaseModel):
@@ -49,16 +49,20 @@ class ServerConfig(BaseModel):
 
 class BenchConfig(BaseModel):
     backend: Literal["vllm", "openai-chat"] = "vllm"
-    dataset: str = "random"          # random | sharegpt | sonnet | file:<name>
-    input_len: int = Field(1024, ge=1, le=131072)
-    output_len: int = Field(128, ge=1, le=32768)
+    dataset: str = "random"          # id in dataset_schema.DATASETS | file:<name>
     num_prompts: int = Field(1000, ge=1, le=1_000_000)
     max_concurrency: int = Field(200, ge=1)
     request_rate: str = "inf"        # float > 0 or "inf"
     ignore_eos: bool = True
     seed: int = Field(0, ge=0)
-    # sonnet-only
-    sonnet_prefix_len: int = Field(200, ge=0)
+    # Per-dataset params, keyed by dataset_schema field spec keys.
+    dataset_params: dict[str, Union[int, float, bool, str]] = Field(
+        default_factory=dict)
+    # Pre-schema flat fields: accepted for old blobs/callers, migrated into
+    # dataset_params below; never emitted by the current frontend.
+    input_len: Optional[int] = None
+    output_len: Optional[int] = None
+    sonnet_prefix_len: Optional[int] = None
 
     @field_validator("request_rate")
     @classmethod
@@ -77,9 +81,25 @@ class BenchConfig(BaseModel):
     @classmethod
     def dataset_valid(cls, v: str) -> str:
         v = v.strip()
-        if v in ("random", "sharegpt", "sonnet") or v.startswith("file:"):
+        if v in dataset_schema.DATASETS or v.startswith("file:"):
             return v
-        raise ValueError("dataset must be random, sharegpt, sonnet, or file:<name>")
+        valid = ", ".join(dataset_schema.DATASETS)
+        raise ValueError(f"dataset must be one of {valid}, or file:<name>")
+
+    @model_validator(mode="after")
+    def dataset_params_valid(self) -> "BenchConfig":
+        if not self.dataset_params:
+            self.dataset_params = dataset_schema.legacy_to_params(
+                self.model_dump())
+        known = {f["key"] for f in dataset_schema.field_specs(self.dataset)}
+        self.dataset_params = {k: v for k, v in self.dataset_params.items()
+                               if k in known}
+        # Offline-only requiredness is enforced at queue time (needs settings).
+        errors = dataset_schema.validate_params(
+            self.dataset, self.dataset_params, offline=False)
+        if errors:
+            raise ValueError("; ".join(f"{k}: {m}" for k, m in errors.items()))
+        return self
 
 
 class RunConfig(BaseModel):
@@ -99,6 +119,7 @@ class SettingsIn(BaseModel):
     hf_token: Optional[str] = None       # omitted/None = keep current
     results_dir: Optional[str] = None
     port_range_start: Optional[int] = Field(None, ge=1024, le=65000)
+    offline_mode: Optional[bool] = None
     execution_mode: Optional[Literal["local", "slurm"]] = None
     bind_address: Optional[Literal["127.0.0.1", "0.0.0.0"]] = None
     health_check_timeout: Optional[int] = Field(None, ge=30, le=7200)

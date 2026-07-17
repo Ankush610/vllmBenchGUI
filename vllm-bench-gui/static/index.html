@@ -21,6 +21,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>
         <span class="nav-label">Benchmark</span>
       </button>
+      <button class="nav-item" data-view="datasets" title="Datasets">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4zM4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4zm0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4z"/></svg>
+        <span class="nav-label">Datasets</span>
+      </button>
       <button class="nav-item" data-view="settings" title="Settings">
         <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
         <span class="nav-label">Settings</span>
@@ -50,6 +54,10 @@
         <div class="param-group">
           <h3>Benchmark</h3>
           <div class="param-grid" id="bench-params"></div>
+        </div>
+        <div class="param-group">
+          <h3 id="dataset-params-title">Dataset options</h3>
+          <div class="param-grid" id="dataset-params"></div>
         </div>
         <div class="param-group">
           <div class="param-grid">
@@ -162,6 +170,40 @@
       </div>
     </section>
 
+    <!-- ========================= Datasets view ========================== -->
+    <section id="view-datasets" class="view">
+      <div class="settings-card datasets-head">
+        <h3>Datasets</h3>
+        <label class="offline-toggle">
+          <input type="checkbox" id="offline-mode-toggle">
+          Offline mode
+          <small>Compute nodes have no internet (typical for SLURM/PARAM).
+            Makes HF subset + split required and warns when a dataset would
+            need a download.</small>
+        </label>
+        <div class="datasets-dir-line">
+          Local dataset dir: <code id="datasets-dir">…</code>
+          — drop <b>.json</b>/<b>.jsonl</b> files here (ShareGPT format) and
+          they appear below and in the Benchmark dataset dropdown.
+        </div>
+      </div>
+
+      <div class="dataset-cards" id="dataset-catalog"></div>
+
+      <div class="table-card">
+        <div class="table-head"><span>Local dataset files</span></div>
+        <div class="table-wrap">
+          <table class="dataset-files-table" id="dataset-files-table">
+            <thead><tr><th>File</th><th>Dataset id</th><th>Runs as</th></tr></thead>
+            <tbody id="dataset-files-body"></tbody>
+          </table>
+          <div id="dataset-files-empty" class="empty-state">
+            No local files yet. Drop .json/.jsonl files into the dataset dir above.
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ========================= Settings view ========================== -->
     <section id="view-settings" class="view">
       <div class="settings-card">
@@ -171,10 +213,6 @@
             <label>Model dir
               <input type="text" name="model_dir">
               <small>Scanned for the model dropdown; downloads land here (HF hub cache).</small>
-            </label>
-            <label>Dataset dir
-              <input type="text" name="dataset_dir">
-              <small>Scanned for dataset files (.json / .jsonl).</small>
             </label>
             <label>HF token
               <input type="password" name="hf_token" placeholder="">
@@ -262,6 +300,7 @@ function loadApex(cb) {
 <script src="js/material.js"></script>
 <script src="js/api.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/datasets.js"></script>
 <script src="js/benchmark.js"></script>
 <script>
 loadApex(function () {

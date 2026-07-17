@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.services import dataset_schema
+
 
 class ResultParseError(Exception):
     pass
@@ -27,6 +29,7 @@ def parse_result_json(path: Path, run: dict) -> dict:
 
     server = run["config"]["server"]
     bench = run["config"]["bench"]
+    in_len, out_len = dataset_schema.summary_lengths(bench)
 
     row = {
         "run_id": run["id"],
@@ -36,8 +39,8 @@ def parse_result_json(path: Path, run: dict) -> dict:
         "max_concurrency": bench.get("max_concurrency"),
         "request_rate": str(bench.get("request_rate")),
         "num_prompts": bench.get("num_prompts"),
-        "input_len": bench.get("input_len"),
-        "output_len": bench.get("output_len"),
+        "input_len": in_len,
+        "output_len": out_len,
         "req_per_sec": _pick(data, "request_throughput"),
         "output_tok_per_sec": _pick(data, "output_throughput",
                                     "output_token_throughput"),

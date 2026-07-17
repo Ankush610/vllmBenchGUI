@@ -21,6 +21,10 @@ def get_settings() -> dict:
 def put_settings(body: SettingsIn) -> dict:
     values = {k: v for k, v in body.model_dump().items() if v is not None}
 
+    # Booleans are stored as "1"/"0" strings (settings table is key/value text).
+    if "offline_mode" in values:
+        values["offline_mode"] = "1" if values["offline_mode"] else "0"
+
     # Validate/create directories. Dirs inside the project are auto-created;
     # outside paths must already exist.
     for key in ("model_dir", "dataset_dir", "results_dir"):

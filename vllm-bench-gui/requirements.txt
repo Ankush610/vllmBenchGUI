@@ -19,5 +19,8 @@ httpx>=0.27
 # hub 1.x ships it in the base package — there is no [cli] extra any more.
 huggingface_hub>=1.0
 
+# Tests (pure functions, no GPU): `python -m pytest` from vllm-bench-gui/
+pytest>=8
+
 # Frontend needs no packages (no build step); ApexCharts is vendored as a
 # static file under static/vendor/.

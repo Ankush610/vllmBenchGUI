@@ -24,6 +24,7 @@ SETTINGS_DEFAULTS: dict[str, str] = {
     "hf_token": "",
     "results_dir": str(RESULTS_DIR),
     "port_range_start": "8000",
+    "offline_mode": "0",                # "1" = compute nodes have no egress
     "execution_mode": "local",          # local | slurm
     "bind_address": "127.0.0.1",        # 127.0.0.1 | 0.0.0.0
     "health_check_timeout": "600",      # seconds to wait for vLLM /health

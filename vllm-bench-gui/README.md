@@ -81,12 +81,20 @@ In SLURM mode each run becomes one self-contained `sbatch` job (server +
 health check + benchmark on the same compute node); generated scripts are
 kept in `data/slurm/` for debugging.
 
-## The three views
+## The four views
 
 - **Benchmark** — run tabs ("+" clones the current tab), server + benchmark
   parameter grid with tooltips and inline validation, live log tail
   (download / server / bench phases), status chip, footer with model dir,
-  HF-token indicator and live vLLM server status.
+  HF-token indicator and live vLLM server status. Picking a dataset swaps in
+  that dataset's own options (schema-driven from `GET /api/datasets`), with
+  a badge showing its network needs.
+- **Datasets** — catalog of the built-in datasets (`random`, `sonnet`,
+  `sharegpt`, `speed-bench`, `hf`) with their flags and network badges,
+  the local `.json`/`.jsonl` files scanned from the dataset dir (fixed at
+  `data/datasets/`), and the **offline mode** toggle: when on, `hf` requires
+  subset + split (that's what makes a warm cache work without egress) and
+  datasets that would download show a nudge to set a local path.
 - **Dashboard** — six charts in a 3×2 grid (left column throughput: output
   tok/s, req/s, total tok/s; right column latency: TTFT p50/p99, TPOT
   p50/p99, E2EL p99). Each chart has a Bar/Line toggle, an expand modal, and
@@ -122,7 +130,7 @@ unsubmitted draft tabs survive via localStorage.
 | `DELETE /api/runs/{id}` | Delete run + result JSON + logs |
 | `GET /api/runs/{id}/logs?file=auto&offset=N` | Byte-offset log tail |
 | `GET /api/models` | Local models scanned from the model dir |
-| `GET /api/datasets` | Built-ins + scanned dataset files |
+| `GET /api/datasets` | Dataset schema (fields/badges) + scanned dataset files |
 | `GET /api/dashboard/results` | Parsed metrics for table + charts |
 | `GET /api/dashboard/export?ids=…` | CSV of selected runs |
 | `GET/PUT /api/settings` | Read/save settings |

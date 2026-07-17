@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app import config, db
 from app.queue_worker import worker
 from app.schemas import QueueRunsRequest
+from app.services import dataset_schema
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -38,6 +39,14 @@ def _dedupe_name(base: str, taken: set[str]) -> str:
 def queue_runs(req: QueueRunsRequest) -> dict:
     settings = config.get_settings()
     runner = settings["execution_mode"]
+    # Base validation ran in the model; offline-only requiredness (e.g. hf
+    # subset/split) depends on settings, so it is enforced here.
+    if settings.get("offline_mode") == "1":
+        for rc in req.runs:
+            errs = dataset_schema.validate_params(
+                rc.bench.dataset, rc.bench.dataset_params, offline=True)
+            if errs:
+                raise HTTPException(422, detail={"dataset_params": errs})
     taken = {r["name"] for r in db.list_runs() if r.get("name")}
     ids = []
     for rc in req.runs:
