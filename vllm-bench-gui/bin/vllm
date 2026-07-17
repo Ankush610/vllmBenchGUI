@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# `vllm` shim: the app builds argv starting with "vllm serve ..." (see
+# app/runners/base.py:serve_args) and resolves it from PATH. There is no native
+# vLLM install on this machine — we run the project's Apptainer container
+# instead, so nothing but `apptainer` itself is assumed from the system.
+#
+# run.sh prepends this directory to PATH, so `vllm ...` lands here.
+#
+# Notes:
+#  - `exec` replaces this shell, so no extra process sits between the runner and
+#    apptainer; apptainer shares the host PID namespace, which keeps
+#    LocalRunner's process-group SIGTERM/SIGKILL working on the vLLM workers.
+#  - CUDA_VISIBLE_DEVICES=0 pins vLLM to the RTX 5000 Ada. GPU 1 is an RTX A400
+#    (display-only, 4 GB) and must never be used for compute. CUDA_DEVICE_ORDER
+#    is forced to PCI_BUS_ID because the two cards differ: CUDA's default
+#    FASTEST_FIRST order need not match nvidia-smi's, and without this "0" could
+#    resolve to the A400. vLLM warns about exactly this on startup.
+#  - $HOME is auto-bound by apptainer and the host env is forwarded, so
+#    HF_HUB_CACHE / HF_TOKEN from app/config.py:hf_env reach vLLM unchanged.
+set -euo pipefail
+
+# Paths/GPU pins come from .env. run.sh already exports them before spawning the
+# app, so we only load the file when it hasn't been done — i.e. when this shim is
+# invoked standalone. That way run.sh's values (and its CLI overrides) always win.
+_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${VLLM_SIF:-}" && -f "$_HERE/../.env" ]]; then
+  set -a; source "$_HERE/../.env"; set +a
+fi
+
+SIF="${VLLM_SIF:-}"
+if [[ -z "$SIF" ]]; then
+  echo "vllm shim: VLLM_SIF is not set (see .env)" >&2
+  exit 127
+fi
+
+if [[ ! -f "$SIF" ]]; then
+  echo "vllm shim: container image not found at $SIF" >&2
+  exit 127
+fi
+if ! command -v apptainer >/dev/null 2>&1; then
+  echo "vllm shim: apptainer not found on PATH" >&2
+  exit 127
+fi
+
+exec apptainer exec --nv \
+  --env CUDA_DEVICE_ORDER="${CUDA_DEVICE_ORDER:-PCI_BUS_ID}" \
+  --env CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
+  "$SIF" vllm "$@"

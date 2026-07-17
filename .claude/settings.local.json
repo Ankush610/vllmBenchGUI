@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import fastapi, uvicorn, pydantic; print\\('fastapi', fastapi.__version__, '| uvicorn', uvicorn.__version__, '| pydantic', pydantic.VERSION\\)\")",
+      "Bash(chmod +x bin/vllm-bench)",
+      "Bash(./bin/vllm-bench --help)",
+      "Bash(python3 -c \"import vllm; print\\('vllm', vllm.__version__\\)\")",
+      "Bash(nvidia-smi --query-gpu=driver_version --format=csv,noheader)",
+      "Bash(/home/admin/miniconda3/envs/vllm-bench-gui/bin/python -m pip install -r requirements.txt)",
+      "Bash(curl -s --max-time 10 http://127.0.0.1:5173/api/status)",
+      "Bash(chmod +x run.sh bin/vllm bin/vllm-bench)",
+      "Bash(./run.sh *)",
+      "Bash(python3 -m json.tool)"
+    ]
+  }
+}

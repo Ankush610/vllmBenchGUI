@@ -1,0 +1,8 @@
+data/
+__pycache__/
+*.pyc
+.venv/
+venv/
+static/vendor/apexcharts.min.js
+# Machine-specific; regenerate with ./setup.sh (template: .env.example).
+.env
