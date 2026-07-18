@@ -1,0 +1,12 @@
+# Enforce LF line endings for all text files — the app targets Linux and
+# shell scripts / entrypoints must not carry CRLF. Git normalizes on checkin.
+* text=auto eol=lf
+
+# Shell scripts and the vllm shim are LF-only, always.
+*.sh text eol=lf
+bin/vllm text eol=lf
+
+# Treat known binaries as binary (no EOL conversion).
+*.png binary
+bin/vllm-bench binary
+*.sif binary
