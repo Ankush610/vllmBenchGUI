@@ -285,15 +285,18 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--md-primary); w
 .badge-hf { background: #ffd7dc; color: #78182a; }
 
 /* model dropdown — Material menu surface */
+/* Sized to content like the themed <select> picker — not stretched to the
+   (wide) anchor field; min/max keep it usable for short and long repo ids. */
 .dropdown-list {
-  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+  width: max-content; min-width: 260px; max-width: 100%;
   background: var(--md-surface); border: none; border-radius: var(--md-radius-m);
   max-height: 240px; overflow-y: auto; box-shadow: var(--md-elev-3);
   padding: 6px;
 }
 .dropdown-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 9px 12px; cursor: pointer; font-size: 13px;
+  gap: 18px; padding: 8px 12px; cursor: pointer; font-size: 13px;
   border-radius: var(--md-radius-s);
 }
 .dropdown-item:hover, .dropdown-item.highlight { background: var(--md-secondary-container); }
@@ -326,13 +329,53 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--md-primary); w
    draw our own chevron (encoded #77767f = --md-on-surface-muted). Keep this
    rule after the two above: their `background`/`background-color` would
    otherwise clear the chevron. */
-.param-cell select, .log-phase-pick select {
+.param-cell select, .log-phase-pick select, .settings-grid select {
   appearance: none; -webkit-appearance: none; -moz-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%2377767f' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
   background-size: 10px 7px;
   padding-right: 28px;
+}
+
+/* Themed dropdown popup (customizable <select>, Chromium 135+). The open
+   picker becomes a page-rendered Material menu; browsers without support
+   silently keep the OS-native popup. */
+@supports (appearance: base-select) {
+  /* Must out-rank the `.param-cell select { appearance: none }` rule above,
+     or the picker never switches out of native rendering. */
+  select, .param-cell select, .log-phase-pick select, .settings-grid select {
+    appearance: base-select;
+    /* base-select buttons wrap long option text; keep the single-line look */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  select::picker(select) { appearance: base-select; }
+  select::picker-icon { display: none; }       /* keep the CSS chevron above */
+  select::picker(select) {
+    background: var(--md-surface);
+    border: none;
+    border-radius: var(--md-radius-m);
+    box-shadow: var(--md-elev-3);
+    padding: 6px;
+    margin-top: 4px;
+  }
+  select option {
+    padding: 8px 12px;
+    border-radius: var(--md-radius-s);
+    font-size: 13px;
+    color: var(--md-on-surface);
+    cursor: pointer;
+    transition: background .12s var(--md-motion);
+  }
+  select option::checkmark { display: none; }  /* selection shown via tint */
+  select option:hover, select option:focus { background: var(--md-surface-2); }
+  select option:checked {
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+    font-weight: 500;
+  }
 }
 .log-phase-pick select:hover { border-color: var(--md-on-surface-muted); }
 .log-phase-pick select:focus-visible {
@@ -488,35 +531,146 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--md-primary); w
 .settings-card h3 { margin: 0 0 18px; font-size: 18px; font-weight: 500; }
 
 /* ---------------------------------------------------------- datasets view */
-.datasets-head { display: flex; flex-direction: column; gap: 10px; }
-.offline-toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; }
-.offline-toggle small { font-weight: 400; color: var(--md-on-surface-var); }
-.datasets-dir-line { font-size: 12.5px; color: var(--md-on-surface-var); }
-.datasets-dir-line code { background: var(--md-surface-2); padding: 2px 7px; border-radius: var(--md-radius-s); }
+.ds-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap; max-width: none;
+}
+.ds-head-text h3 { margin: 0 0 4px; }
+.ds-head-text p { margin: 0; font-size: 13px; color: var(--md-on-surface-var); }
 
+/* Material switch (offline mode) */
+.switch-row {
+  display: flex; align-items: center; gap: 14px; cursor: pointer;
+  padding: 10px 16px; border-radius: var(--md-radius-l);
+  background: var(--md-surface-1); border: 1px solid var(--md-outline-var);
+  transition: background .2s var(--md-motion);
+}
+.switch-row:hover { background: var(--md-surface-2); }
+.switch-text { display: flex; flex-direction: column; }
+.switch-title { font-size: 14px; font-weight: 500; }
+.switch-sub { font-size: 11.5px; color: var(--md-on-surface-muted); }
+.switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: var(--md-surface-3); border: 2px solid var(--md-outline);
+  transition: background .2s var(--md-motion), border-color .2s var(--md-motion);
+}
+.switch-track::before {
+  content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--md-on-surface-muted); top: 4px; left: 4px;
+  transition: transform .2s var(--md-motion), background .2s var(--md-motion),
+              width .2s var(--md-motion), height .2s var(--md-motion), top .2s var(--md-motion);
+}
+.switch input:checked + .switch-track { background: var(--md-primary); border-color: var(--md-primary); }
+.switch input:checked + .switch-track::before {
+  transform: translateX(19px); background: var(--md-on-primary);
+  width: 18px; height: 18px; top: 2px;
+}
+
+/* catalog cards */
 .dataset-cards {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   gap: 14px;
 }
 .dataset-card {
   background: var(--md-surface); border-radius: var(--md-radius-l);
-  box-shadow: var(--md-elev-1); padding: 16px 18px;
-  display: flex; flex-direction: column; gap: 8px;
+  box-shadow: var(--md-elev-1); padding: 16px 18px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: box-shadow .2s var(--md-motion), transform .2s var(--md-motion);
 }
-.dataset-card-head { display: flex; align-items: center; gap: 10px; }
-.dataset-card-head h4 { margin: 0; font-size: 15px; font-weight: 600; }
-.dataset-card-note { font-size: 12.5px; color: var(--md-on-surface-var); }
-.dataset-card-fields { margin: 0; padding: 0; list-style: none; font-size: 12px; }
-.dataset-card-fields li {
-  display: flex; justify-content: space-between; gap: 10px;
-  padding: 3px 0; border-top: 1px solid var(--md-surface-2);
+.dataset-card:hover { box-shadow: var(--md-elev-3); transform: translateY(-1px); }
+.ds-card-head { display: flex; align-items: center; gap: 12px; }
+.ds-icon {
+  width: 38px; height: 38px; border-radius: var(--md-radius-m); flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--md-primary-container); color: var(--md-primary);
 }
-.dataset-card-fields code { color: var(--md-on-surface-var); font-size: 11px; }
-.dataset-files-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.dataset-files-table th, .dataset-files-table td {
-  text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--md-surface-2);
+.ds-card-title { flex: 1; min-width: 0; }
+.ds-card-title h4 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .2px; }
+.ds-card-title .ds-note {
+  display: block; font-size: 12px; color: var(--md-on-surface-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.dataset-files-table th { font-weight: 600; font-size: 12px; color: var(--md-on-surface-var); }
+.ds-badge {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .2px;
+  padding: 3px 10px; border-radius: 999px; cursor: help;
+}
+.ds-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ds-badge.offline { background: #e2f4e3; color: #1a6b24; }
+.ds-badge.cached { background: #fdeeca; color: #7a5900; }
+.ds-badge.hf { background: #ffe0e5; color: #99283c; }
+
+.ds-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; padding: 4px 11px; border-radius: 999px;
+  background: var(--md-surface-1); border: 1px solid var(--md-outline-var);
+  color: var(--md-on-surface-var); cursor: help;
+}
+.ds-chip b { font-weight: 600; color: var(--md-on-surface); }
+.ds-chip.ghost {
+  background: transparent; border-style: dashed; color: var(--md-on-surface-muted);
+}
+.ds-card-foot {
+  display: flex; align-items: center; justify-content: flex-end;
+  margin-top: auto; padding-top: 4px; border-top: 1px solid var(--md-surface-2);
+}
+.ds-use-btn {
+  position: relative; overflow: hidden;               /* ripple host */
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; background: transparent; cursor: pointer;
+  color: var(--md-primary); font: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 7px 12px; border-radius: 999px;
+  transition: background .2s var(--md-motion);
+}
+.ds-use-btn:hover { background: var(--md-primary-container); }
+
+/* local files card */
+.ds-files-card { padding: 18px 22px; }
+.ds-files-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+.ds-files-title { font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.ds-count {
+  font-size: 11px; font-weight: 600; color: var(--md-on-secondary-container);
+  background: var(--md-secondary-container); border-radius: 999px;
+  padding: 1px 9px; line-height: 18px;
+}
+.ds-folder-chip {
+  display: inline-flex; align-items: center; gap: 8px; cursor: help;
+  font-size: 12px; font-family: Consolas, "Cascadia Mono", monospace;
+  color: var(--md-on-surface-var);
+  background: var(--md-surface-1); border: 1px solid var(--md-outline-var);
+  border-radius: 999px; padding: 4px 6px 4px 13px;
+  transition: background .2s var(--md-motion);
+}
+.ds-folder-chip:hover { background: var(--md-surface-2); }
+.ds-folder-chip > svg { color: var(--md-on-surface-muted); flex-shrink: 0; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: transparent; color: var(--md-on-surface-var); cursor: pointer;
+  transition: background .15s var(--md-motion), color .15s var(--md-motion);
+}
+.icon-btn:hover { background: var(--md-surface-2); color: var(--md-primary); }
+.ds-files-list { display: flex; flex-direction: column; }
+.ds-file-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 6px; border-radius: var(--md-radius-m); font-size: 13px;
+  transition: background .15s var(--md-motion);
+}
+.ds-file-row + .ds-file-row { border-top: 1px solid var(--md-surface-2); }
+.ds-file-row:hover { background: var(--md-surface-1); }
+.ds-file-row .ds-icon { width: 30px; height: 30px; border-radius: var(--md-radius-s); background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.ds-file-name { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-file-meta { font-size: 11.5px; color: var(--md-on-surface-muted); font-variant-numeric: tabular-nums; }
+.ds-files-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 26px 20px; text-align: center;
+  color: var(--md-on-surface-muted); font-size: 12.5px;
+}
+.ds-files-empty svg { margin-bottom: 6px; opacity: .55; }
+.ds-files-empty b { color: var(--md-on-surface-var); font-weight: 600; }
 .settings-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px;
 }

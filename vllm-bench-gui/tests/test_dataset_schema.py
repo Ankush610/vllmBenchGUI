@@ -44,8 +44,28 @@ def test_float_range():
     ok = {"random_input_len": 1, "random_output_len": 1}
     assert "random_range_ratio" in ds.validate_params(
         "random", {**ok, "random_range_ratio": 1.5})
+    # binary documents the range as (0, 1] — zero is excluded
+    assert "random_range_ratio" in ds.validate_params(
+        "random", {**ok, "random_range_ratio": 0})
     assert ds.validate_params(
         "random", {**ok, "random_range_ratio": 0.5}) == {}
+    assert ds.validate_params(
+        "random", {**ok, "random_range_ratio": 1.0}) == {}
+
+
+def test_sonnet_defaults_match_binary():
+    dp = ds.default_params("sonnet")
+    assert dp["sonnet_input_len"] == 550
+    assert dp["sonnet_output_len"] == 150
+    assert dp["sonnet_prefix_len"] == 200
+
+
+def test_speed_bench_category_is_free_text():
+    # SPEED-Bench has 11 categories, only some documented — any name passes
+    errs = ds.validate_params(
+        "speed-bench", {"speed_bench_config": "qualitative",
+                        "speed_bench_category": "summarization"})
+    assert errs == {}
 
 
 def test_select_options():

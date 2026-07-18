@@ -147,8 +147,9 @@
           errors[f.key] = f.type === 'int' ? 'must be a whole number' : 'must be a number';
           return;
         }
-        if ((f.min != null && n < f.min) || (f.max != null && n > f.max)) {
-          errors[f.key] = `must be between ${f.min} and ${f.max}`;
+        const below = f.min != null && (f.min_exclusive ? n <= f.min : n < f.min);
+        if (below || (f.max != null && n > f.max)) {
+          errors[f.key] = `must be between ${f.min_exclusive ? '(exclusive) ' : ''}${f.min} and ${f.max}`;
         }
       } else if (f.type === 'select') {
         if (!f.options.map(String).includes(String(v))) errors[f.key] = 'invalid choice';
@@ -940,6 +941,20 @@
     pollLogs();
   });
   document.addEventListener('settings-saved', hydrateFooter);
+
+  // "Use in Benchmark" from the Datasets view: point a draft tab at the
+  // dataset (a fresh tab if the current one is already submitted).
+  document.addEventListener('use-dataset', (e) => {
+    let tab = activeTab();
+    if (!tab || tab.runId) { addTab(); tab = activeTab(); }
+    tab.params.dataset = e.detail;
+    tab.params.dataset_params = defaultDatasetParams(e.detail);
+    renderParams();
+    validateTab(tab);
+    showErrors(tab);
+    saveDrafts();
+    updateSubmitState();
+  });
 
   async function hydrateFooter() {
     try {

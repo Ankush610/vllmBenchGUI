@@ -64,9 +64,9 @@ DATASETS: dict[str, dict] = {
                     "(prefix-cache testing)."},
             {"key": "random_range_ratio", "flag": "--random-range-ratio",
              "label": "Range ratio", "type": "float", "default": 1.0,
-             "min": 0.0, "max": 1.0, "step": "0.05",
-             "tip": "Length jitter: 1.0 = exact lengths, lower = wider "
-                    "spread around the target."},
+             "min": 0.0, "min_exclusive": True, "max": 1.0, "step": "0.05",
+             "tip": "Length jitter in (0, 1]: lengths are sampled from "
+                    "[ratio x target, target]; 1.0 = exact lengths."},
             {"key": "prompt_token_ids", "flag": "--prompt-token-ids",
              "label": "Prompt token IDs", "type": "bool", "default": False,
              "tip": "Send token IDs instead of text (skips server-side "
@@ -78,11 +78,11 @@ DATASETS: dict[str, dict] = {
         "note": "built-in, prefix-cache friendly",
         "fields": [
             {"key": "sonnet_input_len", "flag": "--sonnet-input-len",
-             "label": "Input length", "type": "int", "default": 1024,
+             "label": "Input length", "type": "int", "default": 550,
              "required": True, "min": 1, "max": 131072,
              "tip": "Prompt length in tokens per request."},
             {"key": "sonnet_output_len", "flag": "--sonnet-output-len",
-             "label": "Output length", "type": "int", "default": 128,
+             "label": "Output length", "type": "int", "default": 150,
              "required": True, "min": 1, "max": 32768,
              "tip": "Tokens generated per request."},
             {"key": "sonnet_prefix_len", "flag": "--sonnet-prefix-len",
@@ -120,10 +120,11 @@ DATASETS: dict[str, dict] = {
              "tip": "Which SPEED-Bench split to run; each split caches "
                     "separately, so pre-warm every one you plan to use."},
             {"key": "speed_bench_category", "flag": "--speed-bench-category",
-             "label": "Category", "type": "select", "default": "",
-             "options": ["", "low_entropy", "high_entropy", "mixed_entropy",
-                         "coding", "math"],
-             "tip": "Optional filter to one prompt category."},
+             "label": "Category", "type": "str", "default": "",
+             "placeholder": "e.g. low_entropy, coding, math",
+             "tip": "Optional filter to one of SPEED-Bench's 11 prompt "
+                    "categories (low_entropy, high_entropy, mixed_entropy, "
+                    "coding, math, ...)."},
             {"key": "speed_bench_max_input_len",
              "flag": "--speed-bench-max-input-len",
              "label": "Max input length", "type": "int", "default": "",
@@ -224,8 +225,11 @@ def validate_params(dataset_id: str, params: dict | None,
                 errors[f["key"]] = f"must be a {'whole number' if t == 'int' else 'number'}"
                 continue
             lo, hi = f.get("min"), f.get("max")
-            if (lo is not None and n < lo) or (hi is not None and n > hi):
-                errors[f["key"]] = f"must be between {lo} and {hi}"
+            below = lo is not None and (n <= lo if f.get("min_exclusive")
+                                        else n < lo)
+            if below or (hi is not None and n > hi):
+                bound = f"(exclusive) {lo}" if f.get("min_exclusive") else lo
+                errors[f["key"]] = f"must be between {bound} and {hi}"
         elif t == "bool":
             if not isinstance(v, bool):
                 errors[f["key"]] = "must be true or false"

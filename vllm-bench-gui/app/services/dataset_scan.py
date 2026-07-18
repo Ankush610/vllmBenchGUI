@@ -16,6 +16,7 @@ def scan_datasets(dataset_dir: str) -> list[dict]:
             if f.is_file() and f.suffix.lower() in SCAN_SUFFIXES:
                 items.append({"id": f"file:{f.name}", "kind": "file",
                               "network": "offline", "path": str(f),
+                              "size": f.stat().st_size,
                               "note": "local file",
                               "fields": dataset_schema.FILE_FIELDS})
     return items
