@@ -187,7 +187,38 @@ Everything below needs the scenarios called out (and a SLURM cluster for §7).
 - [ ] Bar/Line toggle per chart; line mode enables zoom/pan toolbar.
 - [ ] Expand modal (~90% viewport), Esc and × close it, toggle inside works.
 - [ ] Concurrency sweep of one model in line mode shows the saturation knee.
-- [ ] Sort by model and by date.
+- [x] Sort by model, dataset, backend, concurrency and date. Each sortable
+      header cycles **three** states per click: off → default direction →
+      flipped → off (↑/↓ on active columns, dim ↕ on idle ones). Default
+      direction is newest-first for Date, A→Z for text columns, low→high for
+      concurrency; ties break newest-first. Concurrency compares
+      **numerically** (as text, c100 would sort before c8) and rows missing a
+      value sink to the bottom in both directions rather than counting as 0.
+- [x] **Multi-column sort.** Columns accumulate in click order and each one
+      only breaks ties left by the ones before it — Model → Dataset → Conc.
+      groups a sweep by model, then by dataset within each model, then by
+      concurrency within each of those. Active headers show their priority
+      number next to the arrow (hidden when only one column is active).
+      Cycling a column off re-ranks the rest; the table never applies the
+      same column twice. The table opens on the implicit date sort, so the
+      *first* click replaces it rather than stacking onto it. **Reset sort**
+      appears once any header is clicked and restores date-newest-first.
+      *Verified 2026-07-20 by Playwright against the live page
+      (`scratchpad/sort_test.mjs`, 24 checks) — driving system Chrome, with
+      `/api/dashboard/results` stubbed so the DB is untouched.*
+- [ ] **Model filter.** Typing in the filter box hides non-matching rows;
+      matching is case-insensitive against the *full* `org/name` plus the
+      label, so `meta-llama` finds a row displayed as `Llama-3.1-8B`. Multiple
+      space-separated terms must all match. A `N of M` count appears while the
+      filter is active and the empty state reads "No runs match this filter."
+      Clearing the box restores every row. Filtering never changes the
+      selection: hidden-but-selected runs stay on the charts and in Export
+      CSV / Delete selected, and the header checkbox selects or clears only
+      the rows currently visible.
+- [x] Label column auto-hides when it carries nothing: every label empty, or
+      each one merely repeating its row's model (full `org/name` or the short
+      name). One meaningful label anywhere shows the column, and the
+      redundant cells in it render blank. Labels stay HTML-escaped.
 - [ ] Delete (row + bulk) asks confirmation and removes DB row, result JSON
       and `data/logs/<run_id>/`.
 - [ ] CSV export downloads exactly the selected rows with all columns.

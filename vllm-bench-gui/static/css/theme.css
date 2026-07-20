@@ -469,7 +469,23 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--md-primary); w
   padding: 12px 18px; border-bottom: 1px solid var(--md-outline-var);
   font-weight: 500; font-size: 13.5px; color: var(--md-on-surface-var);
 }
-.table-actions { display: flex; gap: 10px; }
+.table-actions { display: flex; align-items: center; gap: 10px; }
+
+.table-search { display: flex; align-items: center; gap: 8px; }
+.table-search input {
+  width: 190px; padding: 5px 12px;
+  border: 1px solid var(--md-outline); border-radius: 999px;
+  font: inherit; font-size: 12.5px; background: var(--md-surface);
+  color: var(--md-on-surface);
+  transition: border-color .15s var(--md-motion), box-shadow .15s var(--md-motion);
+}
+.table-search input::placeholder { color: var(--md-on-surface-muted); opacity: .8; }
+.table-search input:hover { border-color: var(--md-on-surface-var); }
+.table-search input:focus {
+  outline: none; border-color: var(--md-primary);
+  box-shadow: 0 0 0 1px var(--md-primary);
+}
+.filter-count { font-size: 11.5px; font-weight: 400; color: var(--md-on-surface-muted); }
 .table-wrap { overflow-x: auto; border-radius: 0 0 var(--md-radius-l) var(--md-radius-l); }
 
 /* Material data table */
@@ -485,6 +501,20 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--md-primary); w
 }
 #results-table th.sortable { cursor: pointer; user-select: none; }
 #results-table th.sortable:hover { color: var(--md-primary); }
+/* Idle columns show a dim double arrow; the active one shows its direction. */
+#results-table th.sortable::after {
+  content: '\2195'; margin-left: 4px; font-size: 10px; opacity: .3;
+}
+#results-table th.sortable.sorted { color: var(--md-primary); }
+/* The active arrow carries its priority number when several columns are
+   stacked (data-rank is unset for a single sort, so attr() adds nothing). */
+#results-table th.sortable[data-dir="asc"]::after {
+  content: '\2191' attr(data-rank); opacity: 1;
+}
+#results-table th.sortable[data-dir="desc"]::after {
+  content: '\2193' attr(data-rank); opacity: 1;
+}
+#results-table th.sortable[data-rank]::after { letter-spacing: .5px; }
 #results-table tbody tr { transition: background .12s var(--md-motion); }
 #results-table tbody tr:hover { background: var(--md-surface-1); }
 #results-table th.num, #results-table td.num {

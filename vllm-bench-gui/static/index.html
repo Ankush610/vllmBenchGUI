@@ -123,6 +123,14 @@
         <div class="table-head">
           <span>Benchmark results</span>
           <div class="table-actions">
+            <div class="table-search">
+              <input type="search" id="model-filter" autocomplete="off"
+                     placeholder="Filter by model…"
+                     aria-label="Filter rows by model or label">
+              <span id="filter-count" class="filter-count hidden"></span>
+            </div>
+            <button id="sort-reset" class="btn btn-small hidden"
+                    title="Back to sorting by date, newest first">Reset sort</button>
             <button id="btn-export" class="btn btn-small">Export CSV</button>
             <button id="btn-delete-selected" class="btn btn-small btn-danger">Delete selected</button>
           </div>
@@ -133,10 +141,10 @@
               <tr>
                 <th><input type="checkbox" id="select-all" checked></th>
                 <th class="sortable" data-sort="model">Model</th>
-                <th>Label</th>
-                <th>Dataset</th>
-                <th>Backend</th>
-                <th class="num">Conc.</th>
+                <th id="th-label">Label</th>
+                <th class="sortable" data-sort="dataset">Dataset</th>
+                <th class="sortable" data-sort="backend">Backend</th>
+                <th class="num sortable" data-sort="concurrency">Conc.</th>
                 <th class="num">In/Out len</th>
                 <th class="num">Req/s</th>
                 <th class="num">Out tok/s</th>

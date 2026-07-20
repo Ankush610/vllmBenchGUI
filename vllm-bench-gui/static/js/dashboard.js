@@ -10,7 +10,17 @@
 
   let rows = [];                 // /api/dashboard/results
   let selected = new Set();      // run_ids driving the charts
-  let sortMode = 'date';         // 'date' | 'model'
+  // Ordered sort priority: [{key, dir}, ...]. First entry is the primary sort,
+  // each later entry only breaks ties left by the ones before it — so
+  // model → dataset → concurrency groups a sweep the way you'd read it.
+  let sortStack = [{ key: 'date', dir: 'desc' }];
+  // The starting date sort is a default, not a choice the user made, so the
+  // first header click replaces it instead of stacking on top of it.
+  let sortPristine = true;
+  // Whitespace-separated search terms; a row must match all of them. Purely a
+  // table view filter — it never touches `selected`, so hidden rows keep their
+  // place on the charts and in export/delete.
+  let filterTerms = [];
   let charts = {};               // chartId -> ApexCharts instance
   let chartTypes = {};           // chartId -> 'bar' | 'line'
   let modalChart = null;
@@ -260,28 +270,97 @@
   });
 
   // -------------------------------------------------------------- table
-  function sortedRows() {
-    const rs = rows.slice();
-    if (sortMode === 'model') {
-      rs.sort((a, b) => (a.model || '').localeCompare(b.model || ''));
-    } else {
-      rs.sort((a, b) => (b.finished_at || '').localeCompare(a.finished_at || ''));
+  // Sortable columns. Text keys return a string: finished_at is ISO-8601, so
+  // lexicographic order is chronological order. Concurrency is compared as a
+  // number — as text, c100 would sort before c8.
+  const SORT_KEYS = {
+    model: (r) => r.model || '',
+    backend: (r) => r.backend || '',
+    dataset: (r) => r.dataset || '',
+    concurrency: (r) => r.max_concurrency,
+    date: (r) => r.finished_at || '',
+  };
+  const NUMERIC_SORTS = new Set(['concurrency']);
+  // Dates read newest-first by default; names A→Z, sweeps low→high.
+  const DEFAULT_DIR = {
+    date: 'desc', model: 'asc', backend: 'asc', dataset: 'asc', concurrency: 'asc',
+  };
+
+  // Compare one row pair on a single column. Returns the raw comparison
+  // (already signed by dir), or 0 when the column can't separate them.
+  function compareOn(a, b, mode, dir) {
+    const key = SORT_KEYS[mode];
+    if (!key) return 0;
+    const sign = dir === 'asc' ? 1 : -1;
+    if (NUMERIC_SORTS.has(mode)) {
+      const av = key(a), bv = key(b);
+      const aMissing = av === null || av === undefined;
+      const bMissing = bv === null || bv === undefined;
+      // Rows with no value sink to the bottom in BOTH directions (ignoring
+      // dir on purpose) rather than masquerading as 0.
+      if (aMissing || bMissing) {
+        if (aMissing && bMissing) return 0;
+        return aMissing ? 1 : -1;
+      }
+      return (av - bv) * sign;
     }
-    return rs;
+    // numeric:true keeps c2 < c10 inside otherwise-equal model names.
+    return key(a).localeCompare(key(b), undefined,
+      { numeric: true, sensitivity: 'base' }) * sign;
+  }
+
+  function sortedRows() {
+    const stack = sortStack.length ? sortStack : [{ key: 'date', dir: 'desc' }];
+    return rows.slice().sort((a, b) => {
+      for (const { key, dir } of stack) {
+        const cmp = compareOn(a, b, key, dir);
+        if (cmp !== 0) return cmp;
+      }
+      // Ties resolve newest-first so grouped rows keep a stable, useful order.
+      return (b.finished_at || '').localeCompare(a.finished_at || '');
+    });
+  }
+
+  // The Label column is a free-text annotation ("baseline", "after tuning").
+  // It carries nothing when empty or when it just repeats the model, so the
+  // cell is blanked in that case — and the whole column hidden when no row
+  // has a meaningful label.
+  function labelText(r) {
+    const l = (r.label || '').trim();
+    if (!l) return '';
+    const model = r.model || '';
+    return (l === model || l === short(model)) ? '' : l;
+  }
+
+  // Matched against the full model path (not the shortened cell text, so
+  // "meta-llama" finds a row displayed as "Llama-3.1-8B") plus the label.
+  function matchesFilter(r) {
+    if (!filterTerms.length) return true;
+    const hay = `${r.model || ''} ${r.label || ''}`.toLowerCase();
+    return filterTerms.every((t) => hay.includes(t));
+  }
+
+  function visibleRows() {
+    return sortedRows().filter(matchesFilter);
   }
 
   function renderTable() {
     const body = $('results-body');
     body.innerHTML = '';
-    const rs = sortedRows();
+    const rs = visibleRows();
+    const showLabel = rs.some((r) => labelText(r));
     $('results-empty').classList.toggle('hidden', rs.length > 0);
+    $('results-empty').textContent = filterTerms.length
+      ? 'No runs match this filter.'
+      : 'No completed runs yet. Queue a benchmark from the Benchmark tab.';
+    $('th-label').classList.toggle('hidden', !showLabel);
     rs.forEach((r) => {
       const tr = document.createElement('tr');
       const date = (r.finished_at || '').replace('T', ' ').replace(/\+.*$/, '');
       tr.innerHTML = `
         <td><input type="checkbox" data-id="${r.run_id}" ${selected.has(r.run_id) ? 'checked' : ''}></td>
         <td title="${r.model}" class="cell-model">${short(r.model)}</td>
-        <td>${escapeHtml(r.label || '')}</td>
+        <td class="cell-label${showLabel ? '' : ' hidden'}">${escapeHtml(labelText(r))}</td>
         <td><span class="cell-chip">${r.dataset}</span></td>
         <td><span class="cell-chip">${r.backend}</span></td>
         <td class="num">${r.max_concurrency ?? '—'}</td>
@@ -302,6 +381,30 @@
       body.appendChild(tr);
     });
     syncSelectAll();
+    syncSortIndicators();
+    syncFilterCount();
+  }
+
+  // Arrow direction lives in data-dir; theme.css renders it via ::after.
+  // data-rank carries the 1-based priority, shown only when more than one
+  // column is active (a lone "1" would be noise).
+  function syncSortIndicators() {
+    const multi = sortStack.length > 1;
+    document.querySelectorAll('#results-table th.sortable').forEach((th) => {
+      const idx = sortStack.findIndex((s) => s.key === th.dataset.sort);
+      const active = idx !== -1;
+      th.classList.toggle('sorted', active);
+      if (active) {
+        th.dataset.dir = sortStack[idx].dir;
+        if (multi) th.dataset.rank = String(idx + 1); else delete th.dataset.rank;
+      } else {
+        delete th.dataset.dir;
+        delete th.dataset.rank;
+      }
+      th.setAttribute('aria-sort', active
+        ? (sortStack[idx].dir === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+    $('sort-reset').classList.toggle('hidden', sortPristine);
   }
 
   function escapeHtml(s) {
@@ -310,24 +413,63 @@
     }[c]));
   }
 
+  // Scoped to the visible rows: with a filter active, the header checkbox
+  // reflects and toggles only what you can see.
   function syncSelectAll() {
     const box = $('select-all');
-    box.checked = rows.length > 0 && rows.every((r) => selected.has(r.run_id));
-    box.indeterminate = !box.checked && rows.some((r) => selected.has(r.run_id));
+    const rs = visibleRows();
+    box.checked = rs.length > 0 && rs.every((r) => selected.has(r.run_id));
+    box.indeterminate = !box.checked && rs.some((r) => selected.has(r.run_id));
   }
 
   $('select-all').addEventListener('change', (e) => {
-    if (e.target.checked) rows.forEach((r) => selected.add(r.run_id));
-    else selected.clear();
+    const rs = visibleRows();
+    if (e.target.checked) rs.forEach((r) => selected.add(r.run_id));
+    else rs.forEach((r) => selected.delete(r.run_id));
     renderTable();
     renderAllCharts();
   });
 
+  // "12 of 40" tells you rows are hidden — the charts and Export/Delete still
+  // act on the selection, which can include those hidden rows.
+  function syncFilterCount() {
+    const el = $('filter-count');
+    const active = filterTerms.length > 0;
+    el.classList.toggle('hidden', !active);
+    if (active) el.textContent = `${visibleRows().length} of ${rows.length}`;
+  }
+
+  $('model-filter').addEventListener('input', (e) => {
+    filterTerms = e.target.value.toLowerCase().split(/\s+/).filter(Boolean);
+    renderTable();
+  });
+
+  // Each header cycles through three states: off → default direction →
+  // flipped → off. Columns accumulate in click order, so clicking Model then
+  // Dataset then Conc. sorts by model, and within each model by dataset, and
+  // within each of those by concurrency — no column is ever applied twice.
   document.querySelectorAll('#results-table th.sortable').forEach((th) => {
     th.addEventListener('click', () => {
-      sortMode = th.dataset.sort === 'model' ? 'model' : 'date';
+      const key = th.dataset.sort;
+      if (!SORT_KEYS[key]) return;
+      if (sortPristine) { sortStack = []; sortPristine = false; }
+      const idx = sortStack.findIndex((s) => s.key === key);
+      if (idx === -1) {
+        sortStack.push({ key, dir: DEFAULT_DIR[key] || 'asc' });
+      } else if (sortStack[idx].dir === (DEFAULT_DIR[key] || 'asc')) {
+        sortStack[idx].dir = sortStack[idx].dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortStack.splice(idx, 1); // third click drops it out of the ordering
+      }
       renderTable();
     });
+  });
+
+  // Back to the default single sort (newest run first).
+  $('sort-reset').addEventListener('click', () => {
+    sortStack = [{ key: 'date', dir: 'desc' }];
+    sortPristine = true;
+    renderTable();
   });
 
   async function deleteRuns(ids) {
