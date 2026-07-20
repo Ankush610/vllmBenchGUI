@@ -11,11 +11,14 @@ usage instructions.
 
 ## Screenshots
 
-### Dashboard
-![Dashboard](images/dashboard.png)
+### Dashboard-Charts
+![Dashboard](images/dashboard-charts.png)
+
+### Dashboard-Table
+![Dashboard](images/dashboard-table.png)
 
 ### Benchmark
-![Benchmark](images/benchmark.png)
+![Dashboard](images/benchmark.png)
 
 ### Settings
-![Settings](images/settings.png)
+![Dashboard](images/settings.png)
